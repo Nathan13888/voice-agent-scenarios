@@ -52,11 +52,12 @@ async function main() {
   // console.log('Generated Test Scenarios:');
   console.log(JSON.stringify(scenarios, null, 2));
   
+  // TODO(nc): clean up
   // Export to JSON file
-  const fs = await import('fs');
-  const outputFile = `test-scenarios-${Date.now()}.json`;
-  fs.writeFileSync(outputFile, JSON.stringify(scenarios, null, 2));
-  console.log(`💾 Test scenarios exported to: ${outputFile}`);
+  // const fs = await import('fs');
+  // const outputFile = `test-scenarios-${Date.now()}.json`;
+  // fs.writeFileSync(outputFile, JSON.stringify(scenarios, null, 2));
+  // console.log(`💾 Test scenarios exported to: ${outputFile}`);
   
   // Summary statistics
   // const genderCounts = scenarios.reduce((acc, scenario) => {
@@ -76,8 +77,8 @@ async function main() {
 }
 
 // Run if this file is executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch(console.error);
-}
+// if (import.meta.url === `file://${process.argv[1]}`) {
+//   main().catch(console.error);
+// }
 
 export { main };
