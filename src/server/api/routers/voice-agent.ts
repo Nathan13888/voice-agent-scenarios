@@ -7,53 +7,13 @@ export const voiceAgentRouter = createTRPCRouter({
   generateTestCases: publicProcedure
     .input(
       z.object({
-        agentConfigJson: z.string().min(1, "Agent configuration is required"),
+        inputText: z.string().min(1, "Input text is required"),
         numScenarios: z.number().min(1).max(50).default(10),
       })
     )
     .mutation(async ({ input }) => {
       try {
-        // Parse the JSON string
-        const parsedConfig = JSON.parse(input.agentConfigJson);
-        
-        // Handle both formats: direct config or wrapped in "agentConfig"
-        let agentConfig;
-        if (parsedConfig.agentConfig) {
-          // Format: { "agentConfig": { ... } }
-          agentConfig = parsedConfig.agentConfig;
-        } else {
-          // Format: { "actions": [...], "initialState": {...}, ... }
-          agentConfig = parsedConfig;
-        }
-        
-        // Validate the parsed configuration matches our schema
-        const agentConfigSchema = z.object({
-          actions: z.array(z.string()),
-          initialState: z.object({
-            name: z.string(),
-            prompt: z.string(),
-            modelName: z.string(),
-            transitions: z.array(z.string()),
-            initialMessage: z.string().optional(),
-          }),
-          additionalStates: z.array(
-            z.object({
-              name: z.string(),
-              prompt: z.string(),
-              modelName: z.string(),
-              transitions: z.array(z.string()),
-              initialMessage: z.string().optional(),
-            })
-          ),
-        });
-
-        const validatedConfig = agentConfigSchema.parse(agentConfig);
-        
-        const voiceAgentInput: VoiceAgentInput = {
-          agentConfig: validatedConfig,
-        };
-
-        const scenarios = create_scenarios(voiceAgentInput, input.numScenarios);
+        const scenarios = await create_scenarios(input.inputText, input.numScenarios);
         
         return {
           scenarios,
@@ -61,13 +21,7 @@ export const voiceAgentRouter = createTRPCRouter({
           generatedAt: new Date().toISOString(),
         };
       } catch (error) {
-        if (error instanceof SyntaxError) {
-          throw new Error("Invalid JSON format. Please check your input.");
-        }
-        if (error instanceof z.ZodError) {
-          throw new Error(`Configuration validation failed: ${error.errors.map(e => e.message).join(", ")}`);
-        }
-        throw new Error("Failed to process agent configuration");
+        throw new Error(`Failed to generate scenarios: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     }),
 

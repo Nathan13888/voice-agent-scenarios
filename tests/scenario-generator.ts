@@ -182,11 +182,14 @@ export function create_scenarios(input: VoiceAgentInput, num_scenarios: number):
   
   // Shuffle templates to get random selection
   const shuffledTemplates = faker.helpers.shuffle([...SCENARIO_TEMPLATES]);
-  
+
   for (let i = 0; i < templateCount && i < shuffledTemplates.length; i++) {
-    scenarios.push(createScenarioFromTemplate(shuffledTemplates[i], input.agentConfig));
+    const template = shuffledTemplates[i];
+    if (template) {
+      scenarios.push(createScenarioFromTemplate(template, input.agentConfig));
+    }
   }
-  
+
   // Fill remaining slots with templates if we need more
   if (templateCount > shuffledTemplates.length) {
     for (let i = 0; i < templateCount - shuffledTemplates.length; i++) {

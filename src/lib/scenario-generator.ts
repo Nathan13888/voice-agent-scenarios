@@ -1,4 +1,6 @@
 import { faker } from '@faker-js/faker';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { env } from '~/env.js';
 import type { TestScenario, VoiceAgentInput } from '~/types/voice-agent';
 
 // Insurance providers list
@@ -173,7 +175,256 @@ function generateCustomScenario(agentConfig: any): TestScenario {
   };
 }
 
-export function create_scenarios(input: VoiceAgentInput, num_scenarios: number): TestScenario[] {
+// Initialize Gemini AI
+const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
+
+async function extractAgentConfigFromText(inputText: string): Promise<any> {
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  
+  const prompt = `Analyze this text and extract voice agent configuration information. Return a JSON object with the following structure:
+{
+  "actions": ["action1", "action2"],
+  "initialState": {
+    "name": "STATE_NAME",
+    "prompt": "Initial state prompt",
+    "modelName": "gpt-4o",
+    "transitions": ["NEXT_STATE1", "NEXT_STATE2"],
+    "initialMessage": "Hello message"
+  },
+  "additionalStates": [
+    {
+      "name": "STATE_NAME",
+      "prompt": "State prompt",
+      "modelName": "gpt-4o-mini",
+      "transitions": []
+    }
+  ]
+}
+
+Text to analyze: "${inputText}"
+
+Extract any mentioned:
+- Actions the agent can perform
+- States or conversation flows
+- Prompts or instructions
+- Transitions between states
+- Initial messages
+
+If information is missing, use reasonable defaults for a medical clinic voice agent.`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    
+    // Extract JSON from response
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    
+    // Fallback to default configuration
+    return {
+      actions: ["find_patient_info", "dial_human_agent"],
+      initialState: {
+        name: "INFORMATION_COLLECTION",
+        prompt: "You are an AI receptionist for a medical clinic. Help patients with their requests.",
+        modelName: "gpt-4o",
+        transitions: ["SCHEDULING_APPOINTMENT"],
+        initialMessage: "Hello, thank you for calling the clinic. How can I help you today?"
+      },
+      additionalStates: [
+        {
+          name: "SCHEDULING_APPOINTMENT",
+          prompt: "You are scheduling an appointment. Ask about appointment type and availability.",
+          modelName: "gpt-4o-mini",
+          transitions: []
+        }
+      ]
+    };
+  } catch (error) {
+    console.error("Gemini API error:", error);
+    // Return default configuration
+    return {
+      actions: ["find_patient_info", "dial_human_agent"],
+      initialState: {
+        name: "INFORMATION_COLLECTION",
+        prompt: "You are an AI receptionist for a medical clinic. Help patients with their requests.",
+        modelName: "gpt-4o",
+        transitions: ["SCHEDULING_APPOINTMENT"],
+        initialMessage: "Hello, thank you for calling the clinic. How can I help you today?"
+      },
+      additionalStates: [
+        {
+          name: "SCHEDULING_APPOINTMENT",
+          prompt: "You are scheduling an appointment. Ask about appointment type and availability.",
+          modelName: "gpt-4o-mini",
+          transitions: []
+        }
+      ]
+    };
+  }
+}
+
+async function generatePersonalityWithGemini(): Promise<{
+  personality: string;
+  background: string;
+  communication_style: string;
+  quirks: string[];
+}> {
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  
+  const prompt = `Generate a colorful, unique personality for a patient calling a medical clinic. Include:
+- A distinctive personality trait (e.g., "anxious", "chatty", "impatient", "confused", "elderly and forgetful")
+- A brief background (age range, occupation, life situation)
+- Communication style (formal, casual, rushed, confused, etc.)
+- 2-3 quirky characteristics that make them memorable
+
+Return as JSON with keys: personality, background, communication_style, quirks (array)`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    
+    // Extract JSON from response
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    
+    // Fallback parsing
+    return {
+      personality: "anxious and chatty",
+      background: "middle-aged professional",
+      communication_style: "rushed and worried",
+      quirks: ["repeats questions", "talks very fast"]
+    };
+  } catch (error) {
+    console.error("Gemini API error:", error);
+    return {
+      personality: "nervous",
+      background: "working adult",
+      communication_style: "formal but anxious",
+      quirks: ["asks many questions"]
+    };
+  }
+}
+
+async function generateScenarioWithGemini(personality: any, agentConfig: any): Promise<{
+  scenarioName: string;
+  scenarioDescription: string;
+  criteria: string;
+}> {
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  
+  const prompt = `Create a realistic medical clinic scenario for a patient with this personality:
+Personality: ${personality.personality}
+Background: ${personality.background}
+Communication Style: ${personality.communication_style}
+Quirks: ${personality.quirks.join(", ")}
+
+Agent capabilities: ${agentConfig.actions.join(", ")}
+Available states: ${[agentConfig.initialState.name, ...agentConfig.additionalStates.map((s: any) => s.name)].join(", ")}
+
+Generate a scenario that:
+1. Uses the patient's personality naturally
+2. Tests the agent's capabilities
+3. Is realistic for a medical clinic
+4. Includes specific success criteria
+
+Return as JSON with keys: scenarioName (string), scenarioDescription (string), criteria (string)`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      // Ensure criteria is a string
+      if (typeof parsed.criteria !== 'string') {
+        parsed.criteria = JSON.stringify(parsed.criteria);
+      }
+      return parsed;
+    }
+    
+    return {
+      scenarioName: "Patient Appointment Request",
+      scenarioDescription: "A patient calls to schedule an appointment",
+      criteria: "The agent handles the request appropriately"
+    };
+  } catch (error) {
+    console.error("Gemini API error:", error);
+    return {
+      scenarioName: "General Patient Inquiry",
+      scenarioDescription: "A patient calls with a general inquiry",
+      criteria: "The agent provides helpful assistance"
+    };
+  }
+}
+
+export async function create_scenarios(input: string, num_scenarios: number): Promise<TestScenario[]> {
+  const scenarios: TestScenario[] = [];
+  
+  // Try to parse as JSON first, fallback to text analysis
+  console.log('Parsing agent input:', input);
+  let agentConfig;
+  try {
+    const parsedInput = JSON.parse(input);
+    agentConfig = parsedInput.agentConfig || parsedInput;
+  } catch (error) {
+    // If not JSON, use Gemini to extract agent configuration from text
+    agentConfig = await extractAgentConfigFromText(input);
+  }
+  
+  // Generate scenarios using Gemini Flash
+  for (let i = 0; i < num_scenarios; i++) {
+    console.log(`Generating scenario ${i + 1} of ${num_scenarios}`);
+    try {
+      // Generate personality with Gemini
+      const personality = await generatePersonalityWithGemini();
+      
+      // Generate scenario with Gemini
+      const scenarioData = await generateScenarioWithGemini(personality, agentConfig);
+      
+      // Generate realistic patient data with faker
+      const firstName = faker.person.firstName();
+      const lastName = faker.person.lastName();
+      const fullName = `${firstName} ${lastName}`;
+      const gender = faker.helpers.arrayElement(['Male', 'Female', 'Other']);
+      
+      const scenario: TestScenario = {
+        scenarioName: scenarioData.scenarioName,
+        scenarioDescription: `${scenarioData.scenarioDescription} ${personality.personality} patient ${fullName} (${personality.background}) calls with a ${personality.communication_style} approach. ${personality.quirks.join(", ")}.`,
+        name: fullName,
+        dob: generateRandomDateOfBirth(),
+        email: generateEmail(firstName, lastName),
+        phone: generatePhoneNumber(),
+        gender,
+        insurance: generateInsuranceProvider(),
+        criteria: typeof scenarioData.criteria === 'string' ? scenarioData.criteria : JSON.stringify(scenarioData.criteria)
+      };
+      
+      scenarios.push(scenario);
+      console.log(`Generated scenario ${i + 1} of ${num_scenarios}: ${scenario.scenarioName}`);
+    } catch (error) {
+      console.error(`Error generating scenario ${i + 1}:`, error);
+      // Fallback to template-based scenario
+      const template = faker.helpers.arrayElement(SCENARIO_TEMPLATES);
+      if (template) {
+        console.log(`Fallback to template-based scenario ${i + 1} of ${num_scenarios}`);
+        scenarios.push(createScenarioFromTemplate(template, agentConfig));
+      }
+    }
+  }
+  
+  return scenarios;
+}
+
+// Keep the original function for backward compatibility
+export function create_scenarios_legacy(input: VoiceAgentInput, num_scenarios: number): TestScenario[] {
   const scenarios: TestScenario[] = [];
   
   // Generate scenarios from templates (70% of scenarios)
@@ -184,14 +435,19 @@ export function create_scenarios(input: VoiceAgentInput, num_scenarios: number):
   const shuffledTemplates = faker.helpers.shuffle([...SCENARIO_TEMPLATES]);
   
   for (let i = 0; i < templateCount && i < shuffledTemplates.length; i++) {
-    scenarios.push(createScenarioFromTemplate(shuffledTemplates[i], input.agentConfig));
+    const template = shuffledTemplates[i];
+    if (template) {
+      scenarios.push(createScenarioFromTemplate(template, input.agentConfig));
+    }
   }
   
   // Fill remaining slots with templates if we need more
   if (templateCount > shuffledTemplates.length) {
     for (let i = 0; i < templateCount - shuffledTemplates.length; i++) {
       const template = faker.helpers.arrayElement(SCENARIO_TEMPLATES);
-      scenarios.push(createScenarioFromTemplate(template, input.agentConfig));
+      if (template) {
+        scenarios.push(createScenarioFromTemplate(template, input.agentConfig));
+      }
     }
   }
   
