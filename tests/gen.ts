@@ -1,64 +1,166 @@
+#!/usr/bin/env bun
+
 /**
- * Voice Agent Test Case Generator
+ * Voice Agent Test Case Generator CLI
  * 
- * This module provides a framework for generating test cases for voice agents.
- * It creates realistic patient scenarios with randomized data using faker.js.
+ * This CLI tool generates realistic test scenarios for voice agents using AI.
+ * It supports both JSON configurations and natural language descriptions.
  * 
- * Example usage:
- * ```typescript
- * import { create_scenarios } from './scenario-generator.js';
- * 
- * const scenarios = create_scenarios(agentConfig, 10);
- * ```
- * 
- * Example output:
- * {
- *   "scenarioName": "Returning Patient - Basic Appointment Request",
- *   "scenarioDescription": "John Doe, a returning patient, calls the clinic to set up a follow-up appointment. He provides his phone number, which the system has on file from a previous visit. He expects the agent to correctly recognize him as a returning patient and confirm his existing details. He wants to schedule a general check-up for next week. He also wonders if his insurance is still on file or if he needs to provide updated information.",
- *   "name": "John Doe",
- *   "dob": "01/01/1980",
- *   "phone": "202-360-9536",
- *   "email": "john.doe@example.com",
- *   "gender": "Male",
- *   "insurance": "Aetna",
- *   "criteria": "The agent smoothly recognizes John as a returning patient using his phone number, verifies personal details, and helps schedule a check-up appointment."
- * }
+ * Usage:
+ *   bun run tests/gen.ts
+ *   bun run tests/gen.ts --input="Your voice agent description"
+ *   bun run tests/gen.ts --input='{"agentConfig": {...}}' --scenarios=15
+ *   bun run tests/gen.ts --help
  */
 
-import { create_scenarios } from './scenario-generator';
-import type { VoiceAgentInput } from './types';
+import { create_scenarios } from '../src/lib/scenario-generator';
 
-// Example agent configuration for testing
-const exampleAgentConfig: VoiceAgentInput = {
-  agentConfig: {
-    actions: ["find_patient_info", "dial_human_agent"],
-    initialState: {
-      name: "INFORMATION_COLLECTION",
-      prompt: "You are an AI receptionist for a clinic. Your goal is to gather patient information, such as contact details and insurance, or look up existing patient records. If the patient needs to schedule an appointment, transition to SCHEDULING_APPOINTMENT. If the call involves a medical history discussion, transition to HPI_COLLECTION. For all other inquiries, connect to a human agent. Always ask for clarifications, ensure accuracy, and thank the patient before ending the call.",
-      modelName: "gpt-4o",
-      transitions: ["SCHEDULING_APPOINTMENT", "HPI_COLLECTION"],
-      initialMessage: "Hello, thank you for calling the clinic. I'm your AI receptionist. Are you a new or returning patient?"
-    },
-    additionalStates: [
-      {
-        name: "SCHEDULING_APPOINTMENT",
-        prompt: "You are scheduling an appointment for a clinic. Ask the patient their appointment type and offer available slots (e.g., Tuesdays 4-5 PM, Wednesdays 2-3 PM, Fridays 9-10 AM). Confirm or reschedule as needed. Always thank the patient and end the call politely.",
-        modelName: "gpt-4o-mini",
-        transitions: []
-      },
-      {
-        name: "HPI_COLLECTION",
-        prompt: "You are collecting medical history for a patient's upcoming doctor visit. Gather information about their symptoms, medical history, medications, and allergies. Ask clear, step-by-step questions to prepare the doctor for the visit. If unsure about anything, connect to a human agent and thank the patient before ending the call.",
-        modelName: "gpt-4o-mini",
-        transitions: []
-      }
-    ]
+// Parse command line arguments
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const options: {
+    input?: string;
+    scenarios?: number;
+    help?: boolean;
+    output?: string;
+  } = {};
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    
+    if (arg === '--help' || arg === '-h') {
+      options.help = true;
+    } else if (arg === '--input' || arg === '-i') {
+      options.input = args[i + 1];
+      i++; // Skip next argument as it's the value
+    } else if (arg === '--scenarios' || arg === '-s') {
+      const value = args[i + 1];
+      options.scenarios = value ? parseInt(value) || 10 : 10;
+      i++; // Skip next argument as it's the value
+    } else if (arg === '--output' || arg === '-o') {
+      options.output = args[i + 1];
+      i++; // Skip next argument as it's the value
+    }
   }
-};
 
-// Generate and export test scenarios
-export const testScenarios = create_scenarios(exampleAgentConfig, 10);
+  return options;
+}
 
-// Export the main function for external use
+// Display help information
+function showHelp() {
+  console.log(`
+Voice Agent Scenario Generator CLI
+
+USAGE:
+  bun run tests/gen.ts [OPTIONS]
+
+OPTIONS:
+  -i, --input <text>      Voice agent description (JSON or natural language)
+  -s, --scenarios <number>   Number of scenarios to generate (default: 10)
+  -o, --output <file>     Output file path (optional)
+  -h, --help              Show this help message
+
+EXAMPLES:
+  # Generate with default example
+  bun run tests/gen.ts
+
+  # Generate with natural language input
+  bun run tests/gen.ts --input="Create a voice agent for a medical clinic"
+
+  # Generate with JSON configuration
+  bun run tests/gen.ts --input='{"agentConfig":{"actions":["schedule"]}}'
+
+  # Generate 20 scenarios and save to file
+  bun run tests/gen.ts --scenarios=20 --output=scenarios.json
+
+INPUT FORMATS:
+  JSON Configuration:
+    {"agentConfig": {"actions": [...], "initialState": {...}}}
+
+  Natural Language:
+    "Create a voice agent for a dental office that can schedule appointments"
+
+  Requirements Document:
+    "Voice Agent Requirements: Handle patient calls, schedule appointments..."
+`);
+}
+
+// Format scenarios for output
+function formatScenarios(scenarios: any[]) {
+  return scenarios.map((scenario, index) => ({
+    id: index + 1,
+    scenarioName: scenario.scenarioName,
+    scenarioDescription: scenario.scenarioDescription,
+    patient: {
+      name: scenario.name,
+      dob: scenario.dob,
+      email: scenario.email,
+      phone: scenario.phone,
+      gender: scenario.gender,
+      insurance: scenario.insurance
+    },
+    successCriteria: scenario.criteria
+  }));
+}
+
+// Main CLI function
+async function main() {
+  const options = parseArgs();
+
+  if (options.help) {
+    showHelp();
+    process.exit(0);
+  }
+
+  // Default input if none provided
+  const input = options.input || `Create a voice agent for a medical clinic that can:
+- Help patients schedule appointments
+- Answer questions about insurance
+- Collect patient information
+- Transfer complex cases to human staff
+- Be friendly and professional`;
+
+  const numScenarios = options.scenarios || 10;
+
+  console.log('🤖 Voice Agent Scenario Generator');
+  console.log('==================================\n');
+  console.log(`Input: ${input.substring(0, 100)}${input.length > 100 ? '...' : ''}`);
+  console.log(`Generating ${numScenarios} scenarios...\n`);
+
+  try {
+    const scenarios = await create_scenarios(input, numScenarios);
+    const formattedScenarios = formatScenarios(scenarios);
+
+    if (options.output) {
+      // Save to file
+      const fs = await import('fs');
+      fs.writeFileSync(options.output, JSON.stringify(formattedScenarios, null, 2));
+      console.log(`✅ Generated ${scenarios.length} scenarios and saved to ${options.output}`);
+    } else {
+      // Display to console
+      formattedScenarios.forEach((scenario, index) => {
+        console.log(`📋 Scenario ${scenario.id}: ${scenario.scenarioName}`);
+        console.log(`   Description: ${scenario.scenarioDescription}`);
+        console.log(`   Patient: ${scenario.patient.name} (${scenario.patient.gender})`);
+        console.log(`   Contact: ${scenario.patient.phone} | ${scenario.patient.email}`);
+        console.log(`   Insurance: ${scenario.patient.insurance}`);
+        console.log(`   Success Criteria: ${scenario.successCriteria}`);
+        console.log('');
+      });
+    }
+
+    console.log(`🎉 Successfully generated ${scenarios.length} test scenarios!`);
+  } catch (error) {
+    console.error('❌ Error generating scenarios:', error);
+    process.exit(1);
+  }
+}
+
+// Run the CLI if this file is executed directly
+if (process.argv[1]?.endsWith('gen.ts')) {
+  main().catch(console.error);
+}
+
+// Export for programmatic use
 export { create_scenarios };
-export type { VoiceAgentInput } from './types.js';
+export { main as runCLI };
